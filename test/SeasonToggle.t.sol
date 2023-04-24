@@ -360,7 +360,6 @@ contract Extend is SeasonToggleTest {
     assertEq(instance.extendabilityDelay(), extendabilityDelay, "extendabilityDelay");
     // and the seasonEnd is correct
     assertEq(instance.seasonEnd(), seasonStart + (3 * seasonDuration), "seasonEnd");
-
   }
 }
 

@@ -85,7 +85,9 @@ contract InternalTest is SeasonToggleFactoryTest {
 contract Internal_encodeArgs is InternalTest {
   function test_fuzz_encodeArgs(uint256 _hatId) public {
     branchRootLevel = hats.getLocalHatLevel(_hatId);
-    assertEq(harness.encodeArgs(_hatId), abi.encodePacked(address(harness), hats, _hatId, branchRootLevel), "encodeArgs");
+    assertEq(
+      harness.encodeArgs(_hatId), abi.encodePacked(address(harness), hats, _hatId, branchRootLevel), "encodeArgs"
+    );
   }
 
   function test_encodeArgs_0() public {
@@ -174,7 +176,7 @@ contract CreateSeasonToggle is SeasonToggleFactoryTest {
     vm.expectEmit(true, true, true, true);
     emit SeasonToggleDeployed(hat1_1, factory.getSeasonToggleAddress(hat1_1), seasonDuration, extendabilityDelay);
     instance = factory.createSeasonToggle(hat1_1, seasonDuration, extendabilityDelay);
-    
+
     assertEq(instance.branchRoot(), hat1_1, "hat");
     assertEq(address(instance.FACTORY()), address(factory), "FACTORY");
     assertEq(address(instance.HATS()), address(hats), "HATS");

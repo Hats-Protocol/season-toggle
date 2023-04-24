@@ -20,7 +20,9 @@ contract SeasonToggleFactory {
   //////////////////////////////////////////////////////////////*/
 
   /// @notice Emitted when a SeasonToggle for `branchRoot` is deployed to address `instance`
-  event SeasonToggleDeployed(uint256 branchRoot, address instance, uint256 _seasonDuration, uint256 _extendabilityDelay);
+  event SeasonToggleDeployed(
+    uint256 branchRoot, address instance, uint256 _seasonDuration, uint256 _extendabilityDelay
+  );
 
   /*//////////////////////////////////////////////////////////////
                             CONSTANTS
