@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.18;
 
-import { console2 } from "forge-std/Test.sol"; // remove before deploy
+// import { console2 } from "forge-std/Test.sol"; // remove before deploy
 import { SeasonToggleFactory } from "./SeasonToggleFactory.sol";
 import { IHatsToggle } from "hats-protocol/Interfaces/IHatsToggle.sol";
 import { IHats } from "hats-protocol/Interfaces/IHats.sol";

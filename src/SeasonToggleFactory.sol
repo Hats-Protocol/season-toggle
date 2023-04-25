@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.18;
 
-import { console2 } from "forge-std/Test.sol"; // remove before deploy
+// import { console2 } from "forge-std/Test.sol"; // remove before deploy
 import { SeasonToggle } from "src/SeasonToggle.sol";
 import { LibClone } from "solady/utils/LibClone.sol";
 import { IHats } from "hats-protocol/Interfaces/IHats.sol";
