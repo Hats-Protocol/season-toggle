@@ -32,7 +32,7 @@ contract SeasonToggleFactoryTest is Test, DeployFactory {
 
   function setUp() public virtual {
     // create and activate a mainnet fork, at the block number where v1.hatsprotocol.eth was deployed
-    fork = vm.createSelectFork("mainnet", 16_947_805);
+    fork = vm.createSelectFork(vm.rpcUrl("mainnet"), 16_947_805);
 
     // deploy the clone factory and the implementation contract
     DeployFactory.prepare(VERSION);
