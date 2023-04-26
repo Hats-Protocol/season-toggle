@@ -14,7 +14,7 @@ contract DeployFactory is Script {
 
   //default values
   string public version = "0.1.0"; // increment with each deploy
-  bool public verbose = false;
+  bool public verbose = true;
 
   /// @notice Override default values, if desired
   function prepare(string memory _version, bool _verbose) public {
@@ -33,8 +33,10 @@ contract DeployFactory is Script {
     factory = new SeasonToggleFactory{ salt: SALT }(implementation, hats, version);
     vm.stopBroadcast();
 
-    console2.log("implementation", address(implementation));
-    console2.log("factory", address(factory));
+    if (verbose) {
+      console2.log("implementation", address(implementation));
+      console2.log("factory", address(factory));
+    }
   }
   // forge script script/SeasonToggle.s.sol:DeployFactory -f mainnet --broadcast --verify
 
