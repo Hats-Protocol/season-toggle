@@ -15,7 +15,7 @@ contract DeployFactory is Script {
   //default values
   string public version = "0.1.0"; // increment with each deploy
   bool public verbose = false;
-  
+
   /// @notice Override default values, if desired
   function prepare(string memory _version, bool _verbose) public {
     version = _version;
