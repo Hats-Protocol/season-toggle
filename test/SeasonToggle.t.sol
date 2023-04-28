@@ -10,6 +10,8 @@ import { LibClone } from "solady/utils/LibClone.sol";
 
 contract SeasonToggleTest is SeasonToggleFactoryTest {
   uint256 public hat1_1_1 = 0x0000000100010001000000000000000000000000000000000000000000000000;
+  uint256 public MIN_SEASON_DURATION;
+  uint256 public DELAY_DIVISOR = 10_000;
   uint256 public seasonStart;
 
   address public dao; // wears topHat1
@@ -31,8 +33,8 @@ contract SeasonToggleTest is SeasonToggleFactoryTest {
   error SeasonToggle_NotBranchAdmin();
   /// @notice Thrown when attempting to extend a branch to a new season before its extendable
   error SeasonToggle_NotExtendable();
-  /// @notice Valid extendability delays are <= 10,000
-  error SeasonToggle_InvalidExtendabilityDelay();
+  /// @notice Valid extension delays are <= 10,000
+  error SeasonToggle_InvalidExtensionDelay();
   /// @notice Season durations must be at least `MIN_SEASON_DURATION` long
   error SeasonToggle_SeasonDurationTooShort();
   /// @notice Emitted when a non-factory address attempts to call an onlyFactory function
@@ -49,17 +51,20 @@ contract SeasonToggleTest is SeasonToggleFactoryTest {
     eligibility = makeAddr("eligibility");
 
     // deploy an instance of the SeasonToggle contract for hat1_1
-    instance = factory.createSeasonToggle(hat1_1, seasonDuration, extendabilityDelay);
+    instance = factory.createSeasonToggle(hat1_1, seasonDuration, extensionDelay);
     seasonStart = block.timestamp;
+    MIN_SEASON_DURATION = instance.MIN_SEASON_DURATION();
 
     // calculate threshold relative timestamps for warping
     farBeforeThreshold =
-      seasonStart + seasonDuration - (((10_000 - extendabilityDelay) * seasonDuration) / 10_000) - 1000;
-    justBeforeThreshold = seasonStart + seasonDuration - (((10_000 - extendabilityDelay) * seasonDuration) / 10_000) - 1;
-    atThreshold = seasonStart + seasonDuration - (((10_000 - extendabilityDelay) * seasonDuration) / 10_000);
-    justAfterThreshold = seasonStart + seasonDuration - (((10_000 - extendabilityDelay) * seasonDuration) / 10_000) + 1;
+      seasonStart + seasonDuration - (((DELAY_DIVISOR - extensionDelay) * seasonDuration) / DELAY_DIVISOR) - 1000;
+    justBeforeThreshold =
+      seasonStart + seasonDuration - (((DELAY_DIVISOR - extensionDelay) * seasonDuration) / DELAY_DIVISOR) - 1;
+    atThreshold = seasonStart + seasonDuration - (((DELAY_DIVISOR - extensionDelay) * seasonDuration) / DELAY_DIVISOR);
+    justAfterThreshold =
+      seasonStart + seasonDuration - (((DELAY_DIVISOR - extensionDelay) * seasonDuration) / DELAY_DIVISOR) + 1;
     farAfterThreshold =
-      seasonStart + seasonDuration - (((10_000 - extendabilityDelay) * seasonDuration) / 10_000) + 1000;
+      seasonStart + seasonDuration - (((DELAY_DIVISOR - extensionDelay) * seasonDuration) / DELAY_DIVISOR) + 1000;
     seasonEnd = seasonStart + seasonDuration;
     justAfterSeason = seasonStart + seasonDuration + 1;
     farAfterSeason = seasonStart + seasonDuration + 1000;
@@ -87,12 +92,12 @@ contract SeasonToggleHarness is SeasonToggle {
     return true;
   }
 
-  function extendabilityThreshold_(uint256 seasonEnd, uint256 extendabilityDelay, uint256 seasonDuration)
+  function extensionThreshold_(uint256 seasonEnd, uint256 extensionDelay, uint256 seasonDuration)
     public
     pure
     returns (uint256)
   {
-    return _extendabilityThreshold(seasonEnd, extendabilityDelay, seasonDuration);
+    return _extensionThreshold(seasonEnd, extensionDelay, seasonDuration);
   }
 }
 
@@ -129,36 +134,40 @@ contract _onlyFactoryTest is InternalTest {
   }
 }
 
-contract _extendabilityThreshold is InternalTest {
-  function test_fuzz_threshold(uint256 _seasonEnd, uint256 _extendabilityDelay, uint256 _seasonDuration) public {
-    _extendabilityDelay = bound(_extendabilityDelay, 0, 10_000);
+contract Internal_extensionThreshold is InternalTest {
+  uint256 actual;
+  uint256 expected;
+
+  function test_fuzz_threshold(uint256 _seasonEnd, uint256 _extensionDelay, uint256 _seasonDuration) public {
+    _extensionDelay = bound(_extensionDelay, 0, DELAY_DIVISOR);
+    // seasonDuration must be at least 1 hour
     _seasonDuration = bound(_seasonDuration, 1 days, 100_000 days);
     _seasonEnd = bound(_seasonEnd, _seasonDuration, seasonStart + 100_000 days);
 
-    uint256 result = harness.extendabilityThreshold_(_seasonEnd, _extendabilityDelay, _seasonDuration);
-    uint256 expected = _seasonEnd - (((10_000 - _extendabilityDelay) * _seasonDuration) / 10_000);
+    actual = harness.extensionThreshold_(_seasonEnd, _extensionDelay, _seasonDuration);
+    expected = (_seasonEnd) - (((DELAY_DIVISOR - _extensionDelay) * _seasonDuration) / DELAY_DIVISOR);
 
-    assertEq(result, expected, "Threshold");
+    assertEq(actual, expected, "Threshold");
   }
 
   function test_threshold_halfDelay() public {
-    uint256 end = block.timestamp + 1000 days;
-    uint256 actual = harness.extendabilityThreshold_(end, 5000, 500 days);
-    uint256 expected = end - 250 days; // 500 / (5000 / 10000) = 500 / 2
+    seasonEnd = block.timestamp + 1000 days;
+    actual = harness.extensionThreshold_(seasonEnd, 5000, 500 days);
+    expected = seasonEnd - 250 days; // 500 / (5000 / 10000) = 500 / 2
     assertEq(actual, expected);
   }
 
   function test_threshold_noDelay() public {
-    uint256 end = block.timestamp + 1000 days;
-    uint256 actual = harness.extendabilityThreshold_(end, 0, 500 days);
-    uint256 expected = end - 500 days; // 500 / (10000 / 10000) = 500 / 1
+    seasonEnd = block.timestamp + 1000 days;
+    actual = harness.extensionThreshold_(seasonEnd, 0, 500 days);
+    expected = seasonEnd - 500 days; // 500 / (10000 / 10000) = 500 / 1
     assertEq(actual, expected);
   }
 
   function test_threshold_fullDelay() public {
-    uint256 end = block.timestamp + 1000 days;
-    uint256 actual = harness.extendabilityThreshold_(end, 10_000, 500 days);
-    uint256 expected = end - 0 days; // 500 / (0 / 10000) = 500 / 2
+    seasonEnd = block.timestamp + 1000 days;
+    actual = harness.extensionThreshold_(seasonEnd, DELAY_DIVISOR, 500 days);
+    expected = seasonEnd - 0 days; // 500 / (0 / 10000) = 500 / 2
     assertEq(actual, expected);
   }
 }
@@ -167,35 +176,35 @@ contract SetUp is InternalTest {
   // use the internal test to be able to set up an un-initialized instance
   function test_succeeds_whenUninitialized() public {
     vm.prank(address(this)); // this contract served as the factory for the harness
-    harness.setUp(seasonDuration, extendabilityDelay);
+    harness.setUp(seasonDuration, extensionDelay);
     assertEq(harness.seasonDuration(), seasonDuration, "seasonDuration");
-    assertEq(harness.extendabilityDelay(), extendabilityDelay, "extendabilityDelay");
+    assertEq(harness.extensionDelay(), extensionDelay, "extensionDelay");
   }
 
   // attempt to set up the implementation again
   function test_reverts_forImplementation() public {
     vm.prank(address(this)); // this contract served as the factory for the harness, but not the implementation
     vm.expectRevert(SeasonToggle_NotFactory.selector);
-    implementation.setUp(seasonDuration, extendabilityDelay);
+    implementation.setUp(seasonDuration, extensionDelay);
   }
 
   function test_reverts_forNonFactoryCaller() public {
     vm.prank(other);
     vm.expectRevert(SeasonToggle_NotFactory.selector);
-    harness.setUp(seasonDuration, extendabilityDelay);
+    harness.setUp(seasonDuration, extensionDelay);
   }
 
   function test_reverts_forInvalidSeasonDuration() public {
     vm.prank(address(this)); // this contract served as the factory for the harness
     vm.expectRevert(SeasonToggle_SeasonDurationTooShort.selector);
     // try a just-too-short duration
-    harness.setUp(1 days - 1, extendabilityDelay);
+    harness.setUp(MIN_SEASON_DURATION - 1, extensionDelay);
   }
 
-  function test_reverts_forInvalidExtendabilityDelay() public {
+  function test_reverts_forInvalidExtensionDelay() public {
     vm.prank(address(this)); // this contract served as the factory for the harness
-    vm.expectRevert(SeasonToggle_InvalidExtendabilityDelay.selector);
-    harness.setUp(seasonDuration, 10_001);
+    vm.expectRevert(SeasonToggle_InvalidExtensionDelay.selector);
+    harness.setUp(seasonDuration, DELAY_DIVISOR + 1);
   }
 }
 
@@ -204,9 +213,8 @@ contract DeployInstance is SeasonToggleTest {
     assertEq(address(instance.FACTORY()), address(factory), "factory");
     assertEq(address(instance.HATS()), address(hats), "hats");
     assertEq(instance.branchRoot(), hat1_1, "branchRoot");
-    assertEq(instance.branchRootLevel(), 1, "branchRootLevel");
     assertEq(instance.seasonDuration(), seasonDuration, "seasonDuration");
-    assertEq(instance.extendabilityDelay(), extendabilityDelay, "extendabilityDelay");
+    assertEq(instance.extensionDelay(), extensionDelay, "extensionDelay");
     assertEq(instance.seasonEnd(), seasonStart + instance.seasonDuration(), "seasonEnd");
     assertEq(instance.version(), VERSION, "version");
   }
@@ -226,24 +234,26 @@ contract GetHatStatus is SeasonToggleTest {
     vm.warp(seasonStart + 1);
     assertTrue(instance.getHatStatus(_testHat), "seasonStart + 1");
 
-    vm.warp(seasonStart + seasonDuration - 1);
+    vm.warp(seasonEnd - 1);
     assertTrue(instance.getHatStatus(_testHat), "seasonStart + seasonDuration - 1");
-
-    vm.warp(seasonStart + seasonDuration);
-    assertTrue(instance.getHatStatus(_testHat), "seasonStart + seasonDuration");
   }
 
   function outOfSeason(uint256 _testHat) public {
-    vm.warp(seasonStart + seasonDuration + 1);
+    // hats become inactive on the last second of the season
+    vm.warp(seasonEnd);
+    assertFalse(instance.getHatStatus(_testHat), "seasonStart + seasonDuration");
+
+    vm.warp(justAfterSeason);
     assertFalse(instance.getHatStatus(_testHat), "seasonStart + seasonDuration + 1");
 
-    vm.warp(seasonStart + seasonDuration + 365 days);
+    vm.warp(farAfterSeason);
     assertFalse(instance.getHatStatus(_testHat), "seasonStart + seasonDuration + 100");
   }
 
   function test_true_forHatOutOfBranch() public {
     testHat = 1;
-    assertTrue(instance.getHatStatus(testHat));
+    inSeason(testHat);
+    outOfSeason(testHat);
   }
 
   function test_true_forHatInBranch_inSeason() public {
@@ -264,6 +274,9 @@ contract GetHatStatus is SeasonToggleTest {
 }
 
 contract Extend is SeasonToggleTest {
+  uint256 newDuration;
+  uint256 newDelay;
+
   function test_reverts_forNonBranchAdmin() public {
     vm.prank(other);
     vm.expectRevert(SeasonToggle_NotBranchAdmin.selector);
@@ -278,17 +291,17 @@ contract Extend is SeasonToggleTest {
   }
 
   function test_reverts_forInvalidDelayValue(uint256 delay) public {
-    vm.assume(delay > 10_000);
+    vm.assume(delay > DELAY_DIVISOR);
     // ensure its extendable
     vm.warp(justAfterThreshold);
     // try to extend with an invalid delay value
     vm.prank(dao);
-    vm.expectRevert(SeasonToggle_InvalidExtendabilityDelay.selector);
+    vm.expectRevert(SeasonToggle_InvalidExtensionDelay.selector);
     instance.extend(0, delay);
   }
 
   function test_reverts_forInvalidSeasonDuration(uint256 duration) public {
-    duration = bound(duration, 1, 1 days - 1);
+    duration = bound(duration, 1, 1 hours - 1);
     // ensure its extendable
     vm.warp(justAfterThreshold);
     // try to extend with an invalid season duration
@@ -303,9 +316,9 @@ contract Extend is SeasonToggleTest {
     // extend
     vm.prank(dao);
     instance.extend(0, 0);
-    // check that the season duration and extendability delay are unchanged
+    // check that the season duration and extension delay are unchanged
     assertEq(instance.seasonDuration(), seasonDuration, "seasonDuration");
-    assertEq(instance.extendabilityDelay(), extendabilityDelay, "extendabilityDelay");
+    assertEq(instance.extensionDelay(), extensionDelay, "extensionDelay");
     assertEq(instance.seasonEnd(), seasonStart + (2 * seasonDuration), "seasonEnd");
   }
 
@@ -313,23 +326,25 @@ contract Extend is SeasonToggleTest {
     // ensure its extendable
     vm.warp(justAfterThreshold);
     // extend
+    newDuration = seasonDuration + 1;
     vm.prank(dao);
-    instance.extend(seasonDuration + 1, 0);
-    // check that the season duration and extendability delay are correct
+    instance.extend(newDuration, 0);
+    // check that the season duration and extension delay are correct
     assertEq(instance.seasonDuration(), seasonDuration + 1, "seasonDuration");
-    assertEq(instance.extendabilityDelay(), extendabilityDelay, "extendabilityDelay");
-    assertEq(instance.seasonEnd(), seasonStart + seasonDuration + (seasonDuration + 1), "seasonEnd");
+    assertEq(instance.extensionDelay(), extensionDelay, "extensionDelay");
+    assertEq(instance.seasonEnd(), seasonStart + seasonDuration + newDuration, "seasonEnd");
   }
 
   function test_extend_withDelayChange() public {
     // ensure its extendable
     vm.warp(justAfterThreshold);
     // extend
+    newDelay = 5000;
     vm.prank(dao);
     instance.extend(0, 5000);
-    // check that the season duration and extendability delay are correct
+    // check that the season duration and extension delay are correct
     assertEq(instance.seasonDuration(), seasonDuration, "seasonDuration");
-    assertEq(instance.extendabilityDelay(), 5000, "extendabilityDelay");
+    assertEq(instance.extensionDelay(), newDelay, "extensionDelay");
     assertEq(instance.seasonEnd(), seasonStart + (2 * seasonDuration), "seasonEnd");
   }
 
@@ -337,12 +352,14 @@ contract Extend is SeasonToggleTest {
     // ensure its extendable
     vm.warp(justAfterThreshold);
     // extend
+    newDuration = seasonDuration + 1;
+    newDelay = 5000;
     vm.prank(dao);
-    instance.extend(seasonDuration + 1, 5000);
-    // check that the season duration and extendability delay are correct
+    instance.extend(seasonDuration + 1, newDelay);
+    // check that the season duration and extension delay are correct
     assertEq(instance.seasonDuration(), seasonDuration + 1, "seasonDuration");
-    assertEq(instance.extendabilityDelay(), 5000, "extendabilityDelay");
-    assertEq(instance.seasonEnd(), seasonStart + seasonDuration + (seasonDuration + 1), "seasonEnd");
+    assertEq(instance.extensionDelay(), newDelay, "extensionDelay");
+    assertEq(instance.seasonEnd(), seasonStart + seasonDuration + newDuration, "seasonEnd");
   }
 
   function test_extend_again_withNoChanges() public {
@@ -352,21 +369,24 @@ contract Extend is SeasonToggleTest {
     vm.prank(dao);
     instance.extend(0, 0);
     // extend again
-    vm.warp(seasonStart + (2 * seasonDuration) - (((10_000 - extendabilityDelay) * seasonDuration) / 10_000) + 1);
+    vm.warp(
+      seasonStart + (2 * seasonDuration) - (((DELAY_DIVISOR - extensionDelay) * seasonDuration) / DELAY_DIVISOR) + 1
+    );
     vm.prank(dao);
     instance.extend(0, 0);
-    // check that the season duration and extendability delay are unchanged
+    // check that the season duration and extension delay are unchanged
     assertEq(instance.seasonDuration(), seasonDuration, "seasonDuration");
-    assertEq(instance.extendabilityDelay(), extendabilityDelay, "extendabilityDelay");
+    assertEq(instance.extensionDelay(), extensionDelay, "extensionDelay");
     // and the seasonEnd is correct
     assertEq(instance.seasonEnd(), seasonStart + (3 * seasonDuration), "seasonEnd");
   }
 }
 
-contract ExtendabilityThreshold is SeasonToggleTest {
+contract ExtensionThreshold is SeasonToggleTest {
   function test_threshold() public {
-    uint256 actual = instance.extendabilityThreshold();
-    uint256 expected = seasonStart + seasonDuration - (((10_000 - extendabilityDelay) * seasonDuration) / 10_000);
+    uint256 actual = instance.extensionThreshold();
+    uint256 expected =
+      seasonStart + seasonDuration - (((DELAY_DIVISOR - extensionDelay) * seasonDuration) / DELAY_DIVISOR);
     assertEq(actual, expected, "Threshold");
   }
 
@@ -377,8 +397,9 @@ contract ExtendabilityThreshold is SeasonToggleTest {
     vm.prank(dao);
     instance.extend(0, 0);
 
-    uint256 actual = instance.extendabilityThreshold();
-    uint256 expected = seasonStart + seasonDuration + (((10_000 - extendabilityDelay) * seasonDuration) / 10_000);
+    uint256 actual = instance.extensionThreshold();
+    uint256 expected =
+      seasonStart + seasonDuration + (((DELAY_DIVISOR - extensionDelay) * seasonDuration) / DELAY_DIVISOR);
     assertEq(actual, expected, "Threshold");
   }
 }
@@ -408,19 +429,5 @@ contract Extendable is SeasonToggleTest {
 
     vm.warp(justBeforeThreshold);
     assertFalse(instance.extendable());
-  }
-}
-
-contract InBranch is SeasonToggleTest {
-  function test_true_forHatInBranch() public {
-    assertTrue(instance.inBranch(hat1_1_1));
-  }
-
-  function test_true_forBranchRoot() public {
-    assertTrue(instance.inBranch(hat1_1));
-  }
-
-  function test_false_forHatOutOfBranch() public {
-    assertFalse(instance.inBranch(topHat1));
   }
 }

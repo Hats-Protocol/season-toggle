@@ -8,17 +8,6 @@ import { IHatsToggle } from "hats-protocol/Interfaces/IHatsToggle.sol";
 import { IHats } from "hats-protocol/Interfaces/IHats.sol";
 import { Clone } from "solady/utils/Clone.sol";
 
-/**
- * TODO
- *  [x] - refactor into clone factory
- *  [x] - simplify logic
- *  [x] - add events
- *  [x] - add custom errors
- *  [x] - write deploy script
- *  [ ] - write tests
- *  [x] - install solady dep
- */
-
 contract SeasonToggle is Clone, IHatsToggle {
   /*//////////////////////////////////////////////////////////////
                             CUSTOM ERRORS
@@ -28,8 +17,8 @@ contract SeasonToggle is Clone, IHatsToggle {
   error SeasonToggle_NotBranchAdmin();
   /// @notice Thrown when attempting to extend a branch to a new season before its extendable
   error SeasonToggle_NotExtendable();
-  /// @notice Valid extendability delays are <= 10,000
-  error SeasonToggle_InvalidExtendabilityDelay();
+  /// @notice Valid extension delays are <= 10,000
+  error SeasonToggle_InvalidExtensionDelay();
   /// @notice Season durations must be at least `MIN_SEASON_DURATION` long
   error SeasonToggle_SeasonDurationTooShort();
   /// @notice Emitted when a non-factory address attempts to call an onlyFactory function
@@ -40,7 +29,7 @@ contract SeasonToggle is Clone, IHatsToggle {
   //////////////////////////////////////////////////////////////*/
 
   /// @notice Emitted when `_branchRoot` has been extended to a new season
-  event Extended(uint256 _branchRoot, uint256 _duration, uint256 _extendabilityDelay);
+  event Extended(uint256 _branchRoot, uint256 _duration, uint256 _extensionDelay);
 
   /*//////////////////////////////////////////////////////////////
                               CONSTANTS
@@ -64,7 +53,6 @@ contract SeasonToggle is Clone, IHatsToggle {
    * 0       | FACTORY         | address | 20      |                     |
    * 20      | HATS            | address | 20      |                     |
    * 40      | branchRoot      | uint256 | 32      |                     |
-   * 72      | branchRootLevel | uint32  | 4       |                     |
    * --------------------------------------------------------------------+
    */
 
@@ -83,14 +71,15 @@ contract SeasonToggle is Clone, IHatsToggle {
     return _getArgUint256(40);
   }
 
-  /// @notice The level of the branch root within its local hat tree
-  /// @dev Used to determine whether a given hat is within the `branchRoot`
-  function branchRootLevel() public pure returns (uint32) {
-    return _getArgUint32(72);
-  }
+  /// @notice The minimum length of a season, in seconds
+  uint256 public constant MIN_SEASON_DURATION = 1 hours; // 1 hour = 3,600 seconds
 
-  /// @notice The minimum length of a season
-  uint256 public constant MIN_SEASON_DURATION = 86_400; // 1 day = 86,400 seconds
+  /**
+   * @notice The divisor used to calculate the extension delay proportion given an `extensionDelay` numerator
+   * @dev This value is >>100 to allow for fine-grained delay values without introducing significant rounding artifacts
+   * from uint division
+   */
+  uint256 internal constant DELAY_DIVISOR = 10_000;
 
   /// @notice The version of this SeasonToggle implementation
   /// @dev This value is not set in clones
@@ -108,8 +97,7 @@ contract SeasonToggle is Clone, IHatsToggle {
                             MUTABLE STATE
   //////////////////////////////////////////////////////////////*/
 
-  /// @notice The timestamp after which the current season ends, i.e. after which hats in this instance's branch will no
-  /// longer be active
+  /// @notice The final second of the current season (a unix timestamp), i.e. the point at which hats become inactive
   uint256 public seasonEnd;
   /// @notice The length of the current season, in seconds
   uint256 public seasonDuration;
@@ -121,7 +109,7 @@ contract SeasonToggle is Clone, IHatsToggle {
    *   - 5,000  ⇒ 50% of the current season must have passed before another season can be added
    *   - 10,000 ⇒ 100% of the current season must have passed before another season can be added
    */
-  uint256 public extendabilityDelay;
+  uint256 public extensionDelay;
 
   /*//////////////////////////////////////////////////////////////
                             INITIALIZER
@@ -131,19 +119,20 @@ contract SeasonToggle is Clone, IHatsToggle {
    * @notice Sets up this instance with initial operational values
    * @dev Only callable by the factory. Since the factory only calls this function during a new deployment, this ensures
    * it can only be called once per instance, and that the implementation contract is never initialized.
-   * @param _seasonDuration The length of the season, in seconds. Must be >= 1 day (`86400` seconds).
-   * @param _extendabilityDelay The proportion of the season that must elapse before the branch can be extended
+   * @param _seasonDuration The length of the season, in seconds. Must be >= 1 hour (`3600` seconds).
+   * @param _extensionDelay The proportion of the season that must elapse before the branch can be extended
    * for another season. The value is treated as the numerator `x` in the expression `x / 10,000`, and therefore must be
    * <= 10,000.
    */
-  function setUp(uint256 _seasonDuration, uint256 _extendabilityDelay) public onlyFactory {
-    // prevent invalid extendability delays
-    if (_extendabilityDelay > 10_000) revert SeasonToggle_InvalidExtendabilityDelay();
+  function setUp(uint256 _seasonDuration, uint256 _extensionDelay) public onlyFactory {
+    // prevent invalid extension delays
+    if (_extensionDelay > DELAY_DIVISOR) revert SeasonToggle_InvalidExtensionDelay();
     // season duration must be non-zero, otherwise
     if (_seasonDuration < MIN_SEASON_DURATION) revert SeasonToggle_SeasonDurationTooShort();
     // initialize the mutable state vars
     seasonDuration = _seasonDuration;
-    extendabilityDelay = _extendabilityDelay;
+    extensionDelay = _extensionDelay;
+    // seasonEnd = block.timestamp + _seasonDuration;
     seasonEnd = block.timestamp + _seasonDuration;
   }
 
@@ -151,7 +140,7 @@ contract SeasonToggle is Clone, IHatsToggle {
                             CONSTRUCTOR
   //////////////////////////////////////////////////////////////*/
 
-  /// @notice Deploy the SeasonToggle implementation contract and set its `_version`
+  /// @notice Deploy the SeasonToggle implementation contract and set its version
   /// @dev This is only used to deploy the implementation contract, and should not be used to deploy clones
   constructor(string memory __version) {
     _version = __version;
@@ -162,18 +151,23 @@ contract SeasonToggle is Clone, IHatsToggle {
   //////////////////////////////////////////////////////////////*/
 
   /**
-   * @notice Check if a hat is active (not expired, in this case).
-   * @dev Does not revert if `_hatId` is not within this instance's branch, in order to not break the Hats wearer
-   * checks. Instead, it returns true.
-   * @param _hatId The id of the hat to check.
-   * @return _active False if `_hatId` has expired; true otherwise.
+   * @notice Check if a hat is active, i.e. we've not yet reached the end of the season
+   * @dev This function is not expected to be called for hats outside of this SeasonToggle instance's branch. To
+   * minimize gas overhead for calls for hats *within* the branch, this function does not check branch inclusion. If
+   * called for a hat outside of the branch, this function will return `true`, which may not be relevant or
+   * appropriate for that hat.
+   * @param / The id of the hat to check. This hat should be within the branch to which this instance of
+   * SeasonToggle applies; otherwise the result may not be relevant.
+   * @return _active False if the season has ended; true otherwise.
    */
-  function getHatStatus(uint256 _hatId) external view override returns (bool _active) {
-    // return true if the hat is not in this instance's branch; ensures this contract only affects hats within this
-    // instance's branch
-    if (!inBranch(_hatId)) return true;
-    // otherwise, the hat is active if the season has not yet ended
-    return block.timestamp <= seasonEnd;
+  function getHatStatus(uint256) external view override returns (bool _active) {
+    /**
+     * @dev For gas-minimization purposes, hats become inactive on the last second of the season (`seasonEnd`) rather
+     * than once the entire season has elapsed. This allows us to avoid the extra opcode required to check the "equals
+     * to" case, saving 3 gas. This is not much, but this function is expected to be called many times, and often many
+     * times within a single transaction (e.g. when resolving hat admins within a branch that uses SeasonToggle).
+     */
+    _active = block.timestamp < seasonEnd;
   }
 
   /*//////////////////////////////////////////////////////////////
@@ -186,38 +180,38 @@ contract SeasonToggle is Clone, IHatsToggle {
    * @dev Requires admin privileges for the branchRoot hat.
    * @param _duration [OPTIONAL] A new custom season duration, in seconds. Set to 0 to re-use the previous
    * duration.
-   * @param _extendabilityDelay [OPTIONAL] A new delay
+   * @param _extensionDelay [OPTIONAL] A new delay
    */
-  function extend(uint256 _duration, uint256 _extendabilityDelay) external {
+  function extend(uint256 _duration, uint256 _extensionDelay) external {
     // prevent non-admins from extending
     if (!HATS().isAdminOfHat(msg.sender, branchRoot())) revert SeasonToggle_NotBranchAdmin();
-    // prevent extending before half of current season has elapsed
+    // prevent extending before extension threshold has been reached
     if (!extendable()) revert SeasonToggle_NotExtendable();
-    // prevent invalid extendability delays
-    if (_extendabilityDelay > 10_000) revert SeasonToggle_InvalidExtendabilityDelay();
+    // prevent invalid extension delays
+    if (_extensionDelay > DELAY_DIVISOR) revert SeasonToggle_InvalidExtensionDelay();
 
     // process the optional _duration value
     uint256 duration;
-    // if new, store the new value and prepare to use it
+    // if new, store the new value and prepare to use it for extension
     if (_duration > 0) {
-      // prevent too short derations
+      // prevent too short durations
       if (_duration < MIN_SEASON_DURATION) revert SeasonToggle_SeasonDurationTooShort();
-      // store the new value; will be used to check extendability for next season
+      // store the new value; will be used to check extension for next season
       seasonDuration = _duration;
-      // prepare to use it
+      // prepare to use it for extension
       duration = _duration;
     } else {
       // otherwise, just prepare to use the existing value from storage
       duration = seasonDuration;
     }
 
-    // process the optional _extendabilityDelay value. We know a set value is valid because of the earlier check.
-    if (_extendabilityDelay > 0) extendabilityDelay = _extendabilityDelay;
+    // process the optional _extensionDelay value. We know a set value is valid because of the earlier check.
+    if (_extensionDelay > 0) extensionDelay = _extensionDelay;
 
-    // extend the expiry by duration
+    // extend to a new season with length `duration`
     seasonEnd += duration;
     // log the extension
-    emit Extended(branchRoot(), _duration, _extendabilityDelay);
+    emit Extended(branchRoot(), _duration, _extensionDelay);
   }
 
   /*//////////////////////////////////////////////////////////////
@@ -229,28 +223,14 @@ contract SeasonToggle is Clone, IHatsToggle {
    * half of the current season has elapsed
    */
   function extendable() public view returns (bool) {
-    return block.timestamp >= _extendabilityThreshold(seasonEnd, extendabilityDelay, seasonDuration);
+    return block.timestamp >= _extensionThreshold(seasonEnd, extensionDelay, seasonDuration);
   }
 
   /**
    * @notice The timestamp at which the branch can be extended to another season, i.e. when it becomes {extendable}
-   *
    */
-  function extendabilityThreshold() public view returns (uint256) {
-    return _extendabilityThreshold(seasonEnd, extendabilityDelay, seasonDuration);
-  }
-
-  /**
-   * @notice Whether the given hat is within the hat branch tied to this instance of SeasonToggle
-   * @param _hatId The id of the hat to check
-   * @return bool True if `_hatId` is within this instance's branch; false otherwise
-   */
-  function inBranch(uint256 _hatId) public pure returns (bool) {
-    // clear all bits in _hatId after the branchRootLevel
-    uint256 bitsToShift = (14 - branchRootLevel()) * 16;
-    uint256 truncatedHatId = _hatId >> bitsToShift << bitsToShift;
-    // return true if the truncated hatId matches the branch root
-    return branchRoot() == truncatedHatId;
+  function extensionThreshold() public view returns (uint256) {
+    return _extensionThreshold(seasonEnd, extensionDelay, seasonDuration);
   }
 
   /*//////////////////////////////////////////////////////////////
@@ -259,18 +239,21 @@ contract SeasonToggle is Clone, IHatsToggle {
 
   /**
    * @notice The timestamp at which the branch can be extended to another season, i.e. when it becomes {extendable}
-   * @param _seasonEnd The timestamp at which the current season ends
-   * @param _extendabilityDelay The proportion of the season that must elapse before the branch can be extended
-   * for another season. The value is treated as the numerator `x` in the expression `x / 10,000`, and therefore must be
-   * <= 10,000.
-   * @param _seasonDuration The length of the season, in seconds. Must be >= 1 day (`86400` seconds).
+   * @param _seasonEnd The timestamp at which the next season begins, ie 1 second after the current season ends
+   * @param _extensionDelay The proportion of the season that must elapse before the branch can be extended
+   * for another season
+   * @param _seasonDuration The length of the season, in seconds
    */
-  function _extendabilityThreshold(uint256 _seasonEnd, uint256 _extendabilityDelay, uint256 _seasonDuration)
+  function _extensionThreshold(uint256 _seasonEnd, uint256 _extensionDelay, uint256 _seasonDuration)
     internal
     pure
     returns (uint256)
   {
-    return (_seasonEnd - (((10_000 - _extendabilityDelay) * _seasonDuration) / 10_000));
+    /**
+     * @dev We need to work backwards from the end of the season, so we subtract `_extensionDelay` from the
+     * `DELAY_DIVISOR`; this is akin to subtracting a percentage from 1 in order to find its complement.
+     */
+    return (_seasonEnd - ((_seasonDuration * (DELAY_DIVISOR - _extensionDelay)) / DELAY_DIVISOR));
   }
 
   /*//////////////////////////////////////////////////////////////

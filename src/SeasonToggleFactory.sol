@@ -20,9 +20,7 @@ contract SeasonToggleFactory {
   //////////////////////////////////////////////////////////////*/
 
   /// @notice Emitted when a SeasonToggle for `branchRoot` is deployed to address `instance`
-  event SeasonToggleDeployed(
-    uint256 branchRoot, address instance, uint256 _seasonDuration, uint256 _extendabilityDelay
-  );
+  event SeasonToggleDeployed(uint256 branchRoot, address instance, uint256 _seasonDuration, uint256 _extensionDelay);
 
   /*//////////////////////////////////////////////////////////////
                             CONSTANTS
@@ -59,11 +57,11 @@ contract SeasonToggleFactory {
    * @dev Will revert *after* the instance is deployed if their initial values are invalid.
    * @param _branchRoot The hat for which to deploy a SeasonToggle.
    * @param _seasonDuration The length of the season, in seconds. Must be >= 1 day (`86400` seconds).
-   * @param _extendabilityDelay The proportion of the season that must elapse before the branch can be extended
+   * @param _extensionDelay The proportion of the season that must elapse before the branch can be extended
    * for another season. Must be <= 10,000.
    * @return _instance The address of the deployed SeasonToggle instance
    */
-  function createSeasonToggle(uint256 _branchRoot, uint256 _seasonDuration, uint256 _extendabilityDelay)
+  function createSeasonToggle(uint256 _branchRoot, uint256 _seasonDuration, uint256 _extensionDelay)
     public
     returns (SeasonToggle _instance)
   {
@@ -72,9 +70,9 @@ contract SeasonToggleFactory {
     // deploy the clone to a deterministic address
     _instance = _createSeasonToggle(_branchRoot);
     // set up the toggle with initial operational values
-    _instance.setUp(_seasonDuration, _extendabilityDelay);
+    _instance.setUp(_seasonDuration, _extensionDelay);
     // log the deployment and setUp
-    emit SeasonToggleDeployed(_branchRoot, address(_instance), _seasonDuration, _extendabilityDelay);
+    emit SeasonToggleDeployed(_branchRoot, address(_instance), _seasonDuration, _extensionDelay);
   }
 
   /**
@@ -139,9 +137,7 @@ contract SeasonToggleFactory {
    * @return The encoded arguments
    */
   function _encodeArgs(uint256 _branchRoot) internal view returns (bytes memory) {
-    // find the local hat level of _branchRoot
-    uint32 branchRootLevel = HATS.getLocalHatLevel(_branchRoot);
-    return abi.encodePacked(address(this), HATS, _branchRoot, branchRootLevel);
+    return abi.encodePacked(address(this), HATS, _branchRoot);
   }
 
   /**

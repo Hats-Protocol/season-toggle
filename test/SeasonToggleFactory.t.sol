@@ -22,11 +22,10 @@ contract SeasonToggleFactoryTest is Test, DeployFactory {
   bytes largeBytes = abi.encodePacked("this is a fairly large bytes object");
   string public constant VERSION = "this is a test";
   uint256 public seasonDuration = 2 days;
-  uint256 public extendabilityDelay = 5000; // 50%
+  uint256 public extensionDelay = 5000; // 50%
   SeasonToggle public instance;
-  uint32 branchRootLevel;
 
-  event SeasonToggleDeployed(uint256 branchRoot, address instance, uint256 seasonDuration, uint256 extendabilityDelay);
+  event SeasonToggleDeployed(uint256 branchRoot, address instance, uint256 seasonDuration, uint256 extensionDelay);
 
   error SeasonToggleFactory_AlreadyDeployed(uint256 hatId);
 
@@ -84,10 +83,7 @@ contract InternalTest is SeasonToggleFactoryTest {
 
 contract Internal_encodeArgs is InternalTest {
   function test_fuzz_encodeArgs(uint256 _hatId) public {
-    branchRootLevel = hats.getLocalHatLevel(_hatId);
-    assertEq(
-      harness.encodeArgs(_hatId), abi.encodePacked(address(harness), hats, _hatId, branchRootLevel), "encodeArgs"
-    );
+    assertEq(harness.encodeArgs(_hatId), abi.encodePacked(address(harness), hats, _hatId), "encodeArgs");
   }
 
   function test_encodeArgs_0() public {
@@ -171,45 +167,33 @@ contract Internal_createToggle is InternalTest {
 
 contract CreateSeasonToggle is SeasonToggleFactoryTest {
   function test_createSeasonToggle() public {
-    uint256 branchRootLevel = hats.getLocalHatLevel(hat1_1);
-
     vm.expectEmit(true, true, true, true);
-    emit SeasonToggleDeployed(hat1_1, factory.getSeasonToggleAddress(hat1_1), seasonDuration, extendabilityDelay);
-    instance = factory.createSeasonToggle(hat1_1, seasonDuration, extendabilityDelay);
+    emit SeasonToggleDeployed(hat1_1, factory.getSeasonToggleAddress(hat1_1), seasonDuration, extensionDelay);
+    instance = factory.createSeasonToggle(hat1_1, seasonDuration, extensionDelay);
 
     assertEq(instance.branchRoot(), hat1_1, "hat");
     assertEq(address(instance.FACTORY()), address(factory), "FACTORY");
     assertEq(address(instance.HATS()), address(hats), "HATS");
     assertEq(instance.branchRoot(), hat1_1, "branchRoot");
-    assertEq(instance.branchRootLevel(), branchRootLevel, "branchRootLevel");
     assertEq(instance.seasonDuration(), seasonDuration, "seasonDuration");
-    assertEq(instance.extendabilityDelay(), extendabilityDelay, "extendabilityDelay");
+    assertEq(instance.extensionDelay(), extensionDelay, "extensionDelay");
   }
 
-  // function test_createSeasonToggle_validbranchRoot() public {
-  //   test_fuzz_createSeasonToggle(hat1_1);
-  // }
-
   function test_createSeasonToggle_alreadyDeployed_reverts() public {
-    factory.createSeasonToggle(hat1_1, seasonDuration, extendabilityDelay);
+    factory.createSeasonToggle(hat1_1, seasonDuration, extensionDelay);
     vm.expectRevert(abi.encodeWithSelector(SeasonToggleFactory_AlreadyDeployed.selector, hat1_1));
-    factory.createSeasonToggle(hat1_1, seasonDuration, extendabilityDelay);
+    factory.createSeasonToggle(hat1_1, seasonDuration, extensionDelay);
   }
 }
 
 contract GetSeasonToggleAddress is SeasonToggleFactoryTest {
   function test_getSeasonToggleAddress_validBranchRoot() public {
-    branchRootLevel = hats.getLocalHatLevel(hat1_1);
-    bytes memory args = abi.encodePacked(address(factory), hats, hat1_1, branchRootLevel);
+    bytes memory args = abi.encodePacked(address(factory), hats, hat1_1);
     address expected = LibClone.predictDeterministicAddress(
       address(implementation), args, keccak256(abi.encodePacked(args, block.chainid)), address(factory)
     );
     assertEq(factory.getSeasonToggleAddress(hat1_1), expected);
   }
-
-  // function test_getSeasonToggleAddress_validbranchRoot() public {
-  //   test_fuzz_getSeasonToggleAddress(hat1_1);
-  // }
 }
 
 contract Deployed is InternalTest {
