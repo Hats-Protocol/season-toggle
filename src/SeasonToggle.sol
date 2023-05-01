@@ -32,7 +32,7 @@ contract SeasonToggle is Clone, IHatsToggle {
   event Extended(uint256 _branchRoot, uint256 _duration, uint256 _extensionDelay);
 
   /*//////////////////////////////////////////////////////////////
-                              CONSTANTS
+                          PUBLIC  CONSTANTS
   //////////////////////////////////////////////////////////////*/
 
   /**
@@ -71,8 +71,20 @@ contract SeasonToggle is Clone, IHatsToggle {
     return _getArgUint256(40);
   }
 
+  /// @notice The version of this SeasonToggle
+  function version() public view returns (string memory version_) {
+    // If the factory is set (ie this is a clone), use its version
+    if (address(FACTORY()) != address(0)) return FACTORY().version();
+    // Otherwise (ie this is the implementation contract), use the version from storage
+    else return _version;
+  }
+
   /// @notice The minimum length of a season, in seconds
   uint256 public constant MIN_SEASON_DURATION = 1 hours; // 1 hour = 3,600 seconds
+
+  /*//////////////////////////////////////////////////////////////
+                          INTERNAL  CONSTANTS
+  //////////////////////////////////////////////////////////////*/
 
   /**
    * @notice The divisor used to calculate the extension delay proportion given an `extensionDelay` numerator
@@ -84,14 +96,6 @@ contract SeasonToggle is Clone, IHatsToggle {
   /// @notice The version of this SeasonToggle implementation
   /// @dev This value is not set in clones
   string internal _version;
-
-  /// @notice The version of this SeasonToggle
-  function version() public view returns (string memory version_) {
-    // If the factory is set (ie this is a clone), use its version
-    if (address(FACTORY()) != address(0)) return FACTORY().version();
-    // Otherwise (ie this is the implementation contract), use the version from storage
-    else return _version;
-  }
 
   /*//////////////////////////////////////////////////////////////
                             MUTABLE STATE
@@ -234,7 +238,7 @@ contract SeasonToggle is Clone, IHatsToggle {
   }
 
   /*//////////////////////////////////////////////////////////////
-                          INTERNAL FUNCTIONS
+                        INTERNAL FUNCTIONS
   //////////////////////////////////////////////////////////////*/
 
   /**
