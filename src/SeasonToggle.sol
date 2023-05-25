@@ -3,12 +3,11 @@
 pragma solidity ^0.8.18;
 
 // import { console2 } from "forge-std/Test.sol"; // remove before deploy
-import { SeasonToggleFactory } from "./SeasonToggleFactory.sol";
 import { IHatsToggle } from "hats-protocol/Interfaces/IHatsToggle.sol";
 import { IHats } from "hats-protocol/Interfaces/IHats.sol";
-import { Clone } from "solady/utils/Clone.sol";
+import { HatsToggleModule, HatsModule } from "hats-module/HatsToggleModule..sol";
 
-contract SeasonToggle is Clone, IHatsToggle {
+contract SeasonToggle is HatsToggleModule {
   /*//////////////////////////////////////////////////////////////
                             CUSTOM ERRORS
   //////////////////////////////////////////////////////////////*/
@@ -35,50 +34,6 @@ contract SeasonToggle is Clone, IHatsToggle {
                           PUBLIC  CONSTANTS
   //////////////////////////////////////////////////////////////*/
 
-  /**
-   * This contract is a clone with immutable args, which means that it is deployed with a set of
-   * immutable storage variables (ie constants). Accessing these constants is cheaper than accessing
-   * regular storage variables (such as those set on initialization of a typical EIP-1167 clone),
-   * but requires a slightly different approach since they are read from calldata instead of storage.
-   *
-   * Below is a table of constants and their location.
-   *
-   * For more, see here: https://github.com/Saw-mon-and-Natalie/clones-with-immutable-args
-   *
-   * --------------------------------------------------------------------+
-   * CLONE IMMUTABLE "STORAGE"                                           |
-   * --------------------------------------------------------------------|
-   * Offset  | Constant        | Type    | Length  |                     |
-   * --------------------------------------------------------------------|
-   * 0       | FACTORY         | address | 20      |                     |
-   * 20      | HATS            | address | 20      |                     |
-   * 40      | branchRoot      | uint256 | 32      |                     |
-   * --------------------------------------------------------------------+
-   */
-
-  /// @notice The address of the SeasonToggleFactory that deployed this contract
-  function FACTORY() public pure returns (SeasonToggleFactory) {
-    return SeasonToggleFactory(_getArgAddress(0));
-  }
-
-  /// @notice Hats Protocol address
-  function HATS() public pure returns (IHats) {
-    return IHats(_getArgAddress(20));
-  }
-
-  /// @notice The hat id of the root of the branch to which this instance applies
-  function branchRoot() public pure returns (uint256) {
-    return _getArgUint256(40);
-  }
-
-  /// @notice The version of this SeasonToggle
-  function version() public view returns (string memory version_) {
-    // If the factory is set (ie this is a clone), use its version
-    if (address(FACTORY()) != address(0)) return FACTORY().version();
-    // Otherwise (ie this is the implementation contract), use the version from storage
-    else return _version;
-  }
-
   /// @notice The minimum length of a season, in seconds
   uint256 public constant MIN_SEASON_DURATION = 1 hours; // 1 hour = 3,600 seconds
 
@@ -92,10 +47,6 @@ contract SeasonToggle is Clone, IHatsToggle {
    * from uint division
    */
   uint256 internal constant DELAY_DIVISOR = 10_000;
-
-  /// @notice The version of this SeasonToggle implementation
-  /// @dev This value is not set in clones
-  string internal _version;
 
   /*//////////////////////////////////////////////////////////////
                             MUTABLE STATE
@@ -123,12 +74,14 @@ contract SeasonToggle is Clone, IHatsToggle {
    * @notice Sets up this instance with initial operational values
    * @dev Only callable by the factory. Since the factory only calls this function during a new deployment, this ensures
    * it can only be called once per instance, and that the implementation contract is never initialized.
-   * @param _seasonDuration The length of the season, in seconds. Must be >= 1 hour (`3600` seconds).
-   * @param _extensionDelay The proportion of the season that must elapse before the branch can be extended
+   * @param _initData Packed initialization data with two parameters:
+   *  _seasonDuration - The length of the season, in seconds. Must be >= 1 hour (`3600` seconds).
+   *  _extensionDelay - The proportion of the season that must elapse before the branch can be extended
    * for another season. The value is treated as the numerator `x` in the expression `x / 10,000`, and therefore must be
    * <= 10,000.
    */
-  function setUp(uint256 _seasonDuration, uint256 _extensionDelay) public onlyFactory {
+  function setUp(bytes calldata _initData) public override initializer {
+    (uint256 _seasonDuration, uint256 _extensionDelay) = abi.decode(_initData, (uint256, uint256));
     // prevent invalid extension delays
     if (_extensionDelay > DELAY_DIVISOR) revert SeasonToggle_InvalidExtensionDelay();
     // season duration must be non-zero, otherwise
@@ -146,9 +99,7 @@ contract SeasonToggle is Clone, IHatsToggle {
 
   /// @notice Deploy the SeasonToggle implementation contract and set its version
   /// @dev This is only used to deploy the implementation contract, and should not be used to deploy clones
-  constructor(string memory __version) {
-    _version = __version;
-  }
+  constructor(string memory __version) HatsModule(__version) { }
 
   /*//////////////////////////////////////////////////////////////
                           HATS TOGGLE FUNCTION
@@ -164,7 +115,7 @@ contract SeasonToggle is Clone, IHatsToggle {
    * SeasonToggle applies; otherwise the result may not be relevant.
    * @return _active False if the season has ended; true otherwise.
    */
-  function getHatStatus(uint256) external view override returns (bool _active) {
+  function getHatStatus(uint256) public view override returns (bool _active) {
     /**
      * @dev For gas-minimization purposes, hats become inactive on the last second of the season (`seasonEnd`) rather
      * than once the entire season has elapsed. This allows us to avoid the extra opcode required to check the "equals
@@ -188,7 +139,7 @@ contract SeasonToggle is Clone, IHatsToggle {
    */
   function extend(uint256 _duration, uint256 _extensionDelay) external {
     // prevent non-admins from extending
-    if (!HATS().isAdminOfHat(msg.sender, branchRoot())) revert SeasonToggle_NotBranchAdmin();
+    if (!HATS().isAdminOfHat(msg.sender, hatId())) revert SeasonToggle_NotBranchAdmin();
     // prevent extending before extension threshold has been reached
     if (!extendable()) revert SeasonToggle_NotExtendable();
     // prevent invalid extension delays
@@ -215,7 +166,7 @@ contract SeasonToggle is Clone, IHatsToggle {
     // extend to a new season with length `duration`
     seasonEnd += duration;
     // log the extension
-    emit Extended(branchRoot(), _duration, _extensionDelay);
+    emit Extended(hatId(), _duration, _extensionDelay);
   }
 
   /*//////////////////////////////////////////////////////////////
@@ -258,14 +209,5 @@ contract SeasonToggle is Clone, IHatsToggle {
      * `DELAY_DIVISOR`; this is akin to subtracting a percentage from 1 in order to find its complement.
      */
     return (_seasonEnd - ((_seasonDuration * (DELAY_DIVISOR - _extensionDelay)) / DELAY_DIVISOR));
-  }
-
-  /*//////////////////////////////////////////////////////////////
-                            MODIFIERS
-  //////////////////////////////////////////////////////////////*/
-
-  modifier onlyFactory() {
-    if (msg.sender != address(FACTORY())) revert SeasonToggle_NotFactory();
-    _;
   }
 }

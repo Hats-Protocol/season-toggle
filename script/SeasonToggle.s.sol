@@ -1,19 +1,15 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.13;
+pragma solidity ^0.8.18;
 
 import { Script, console2 } from "forge-std/Script.sol";
 import { SeasonToggle } from "src/SeasonToggle.sol";
-import { SeasonToggleFactory } from "src/SeasonToggleFactory.sol";
-import { IHats } from "hats-protocol/Interfaces/IHats.sol";
 
-contract DeployFactory is Script {
-  SeasonToggleFactory public factory;
+contract DeployImplementation is Script {
   SeasonToggle public implementation;
-  IHats public constant hats = IHats(0x9D2dfd6066d5935267291718E8AA16C8Ab729E9d); // v1.hatsprotocol.eth
   bytes32 internal constant SALT = bytes32(abi.encode(0x4a75)); // ~ H(4) A(a) T(7) S(5)
 
   //default values
-  string public version = "0.2.0"; // increment with each deploy
+  string public version = "0.1.0"; // increment with each deploy
   bool public verbose = true;
 
   /// @notice Override default values, if desired
@@ -27,15 +23,11 @@ contract DeployFactory is Script {
     address deployer = vm.rememberKey(privKey);
 
     vm.startBroadcast(deployer);
-    // deploy the implementation
     implementation = new SeasonToggle{ salt: SALT }(version);
-    // deploy the contract
-    factory = new SeasonToggleFactory{ salt: SALT }(implementation, hats, version);
     vm.stopBroadcast();
 
     if (verbose) {
       console2.log("implementation", address(implementation));
-      console2.log("factory", address(factory));
     }
   }
   // forge script script/SeasonToggle.s.sol:DeployFactory -f mainnet --broadcast --verify
