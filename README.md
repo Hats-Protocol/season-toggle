@@ -1,5 +1,7 @@
 # SeasonToggle
 
+Test
+
 A mechanistic [Hats Protocol](https://github.com/Hats-Protocol/hats-protocol) Toggle module — i.e. a contract that implements the [`IHatsToggle` interface](https://github.com/Hats-Protocol/hats-protocol/src/Interfaces/IHatsToggle.sol) — that allows an organization to configure certain hats to be automatically toggled off after a given interval, i.e. a "season".
 
 Organizational structure should not be permanent. By automatically turning off hats by default, SeasonToggle helps ensure that organizations continuously and explicitly revisit their own structure.
