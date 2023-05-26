@@ -44,7 +44,7 @@ optimism = "https://optimism-mainnet.infura.io/v3/${INFURA_KEY}"
 polygon = "${POLYGON_RPC}"
 sepolia = "https://sepolia.infura.io/v3/${INFURA_KEY}"
 
-#[etherscan]
+[etherscan]
 arbitrum = {key = "${ARBISCAN_KEY}", url = "https://api.arbiscan.io/api"}
 goerli = {key = "${ETHERSCAN_KEY}", url = "https://api-goerli.etherscan.io/api"}
 gnosis = {key = "${GNOSISSCAN_KEY}", url = "https://api.gnosisscan.io/api"}
