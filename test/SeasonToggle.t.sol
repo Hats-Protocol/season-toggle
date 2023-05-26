@@ -8,17 +8,18 @@ import { DeployImplementation } from "script/SeasonToggle.s.sol";
 import { HatsModuleFactory } from "hats-module/HatsModuleFactory.sol";
 
 contract DeployModuleFactory is Test {
-  HatsModuleFactory public factory;
   IHats public constant hats = IHats(0x9D2dfd6066d5935267291718E8AA16C8Ab729E9d); // v1.hatsprotocol.eth
-  //bytes32 public SALT = bytes32(abi.encode(0x4a75)); // ~ H(4) A(a) T(7) S(5)
+  HatsModuleFactory public factory;
+  bytes32 public FACTORY_SALT = bytes32(abi.encode(0x4a75)); // ~ H(4) A(a) T(7) S(5)
 
   function setUp() public virtual {
-    factory = new HatsModuleFactory(hats, "0.1.0");
-    //console2.log("HatsModuleFactory:", address(factory));
+    factory = new HatsModuleFactory{salt: FACTORY_SALT}(hats, "0.1.0");
   }
 }
 
 contract SeasonToggleTest is Test, DeployImplementation, DeployModuleFactory {
+  uint256 public fork = vm.createSelectFork(vm.rpcUrl("mainnet"), 16_947_805);
+
   uint256 public topHat1 = 0x0000000100000000000000000000000000000000000000000000000000000000;
   uint256 public hat1_1 = 0x0000000100010000000000000000000000000000000000000000000000000000;
   bytes32 maxBytes32 = bytes32(type(uint256).max);
@@ -27,6 +28,8 @@ contract SeasonToggleTest is Test, DeployImplementation, DeployModuleFactory {
   uint256 public seasonDuration = 2 days;
   uint256 public extensionDelay = 5000; // 50%
   SeasonToggle public instance;
+
+  string public IMPLEMENTATION_VERSION = "0.1.0";
 
   uint256 public hat1_1_1 = 0x0000000100010001000000000000000000000000000000000000000000000000;
   uint256 public MIN_SEASON_DURATION;
@@ -56,8 +59,6 @@ contract SeasonToggleTest is Test, DeployImplementation, DeployModuleFactory {
   error SeasonToggle_InvalidExtensionDelay();
   /// @notice Season durations must be at least `MIN_SEASON_DURATION` long
   error SeasonToggle_SeasonDurationTooShort();
-  /// @notice Emitted when a non-factory address attempts to call an onlyFactory function
-  error SeasonToggle_NotFactory();
 
   function setUp() public virtual override {
     DeployModuleFactory.setUp();
@@ -69,7 +70,7 @@ contract SeasonToggleTest is Test, DeployImplementation, DeployModuleFactory {
     eligibility = makeAddr("eligibility");
 
     // deploy implementation
-    DeployImplementation.prepare("0.1.0", false);
+    DeployImplementation.prepare(IMPLEMENTATION_VERSION, false);
     DeployImplementation.run();
 
     // deploy an instance of the SeasonToggle contract for hat1_1
@@ -104,14 +105,8 @@ contract SeasonToggleTest is Test, DeployImplementation, DeployModuleFactory {
     vm.stopPrank();
   }
 
-  /// @notice Mocks a call to the eligibility contract for `wearer` and `hat` that returns `eligible` and `standing`
-  function mockEligibityCall(address wearer, uint256 hat, bool eligible, bool standing) public {
-    bytes memory data = abi.encodeWithSignature("getWearerStatus(address,uint256)", wearer, hat);
-    vm.mockCall(eligibility, data, abi.encode(eligible, standing));
-  }
-
   function test_deploy_implementation() public {
-    assertEq(implementation.version_(), "0.1.0", "version");
+    assertEq(implementation.version_(), IMPLEMENTATION_VERSION, "implementation version");
   }
 }
 

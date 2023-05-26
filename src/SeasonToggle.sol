@@ -5,7 +5,7 @@ pragma solidity ^0.8.18;
 // import { console2 } from "forge-std/Test.sol"; // remove before deploy
 import { IHatsToggle } from "hats-protocol/Interfaces/IHatsToggle.sol";
 import { IHats } from "hats-protocol/Interfaces/IHats.sol";
-import { HatsToggleModule, HatsModule } from "hats-module/HatsToggleModule..sol";
+import { HatsToggleModule, HatsModule } from "hats-module/HatsToggleModule.sol";
 
 contract SeasonToggle is HatsToggleModule {
   /*//////////////////////////////////////////////////////////////
@@ -20,8 +20,6 @@ contract SeasonToggle is HatsToggleModule {
   error SeasonToggle_InvalidExtensionDelay();
   /// @notice Season durations must be at least `MIN_SEASON_DURATION` long
   error SeasonToggle_SeasonDurationTooShort();
-  /// @notice Emitted when a non-factory address attempts to call an onlyFactory function
-  error SeasonToggle_NotFactory();
 
   /*//////////////////////////////////////////////////////////////
                                 EVENTS
