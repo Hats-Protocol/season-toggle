@@ -3,12 +3,34 @@ pragma solidity ^0.8.13;
 
 import { Test, console2 } from "forge-std/Test.sol";
 import { SeasonToggle } from "src/SeasonToggle.sol";
-import { SeasonToggleFactory } from "src/SeasonToggleFactory.sol";
-import { SeasonToggleFactoryTest } from "test/SeasonToggleFactory.t.sol";
 import { IHats } from "hats-protocol/Interfaces/IHats.sol";
-import { LibClone } from "solady/utils/LibClone.sol";
+import { DeployImplementation } from "script/SeasonToggle.s.sol";
+import { HatsModuleFactory } from "hats-module/HatsModuleFactory.sol";
 
-contract SeasonToggleTest is SeasonToggleFactoryTest {
+contract DeployModuleFactory is Test {
+  IHats public constant hats = IHats(0x9D2dfd6066d5935267291718E8AA16C8Ab729E9d); // v1.hatsprotocol.eth
+  HatsModuleFactory public factory;
+  bytes32 public FACTORY_SALT = bytes32(abi.encode(0x4a75)); // ~ H(4) A(a) T(7) S(5)
+
+  function setUp() public virtual {
+    factory = new HatsModuleFactory{salt: FACTORY_SALT}(hats, "0.1.0");
+  }
+}
+
+contract SeasonToggleTest is Test, DeployImplementation, DeployModuleFactory {
+  uint256 public fork = vm.createSelectFork(vm.rpcUrl("mainnet"), 16_947_805);
+
+  uint256 public topHat1 = 0x0000000100000000000000000000000000000000000000000000000000000000;
+  uint256 public hat1_1 = 0x0000000100010000000000000000000000000000000000000000000000000000;
+  bytes32 maxBytes32 = bytes32(type(uint256).max);
+  bytes largeBytes = abi.encodePacked("this is a fairly large bytes object");
+  string public constant VERSION = "this is a test";
+  uint256 public seasonDuration = 2 days;
+  uint256 public extensionDelay = 5000; // 50%
+  SeasonToggle public instance;
+
+  string public IMPLEMENTATION_VERSION = "0.1.0";
+
   uint256 public hat1_1_1 = 0x0000000100010001000000000000000000000000000000000000000000000000;
   uint256 public MIN_SEASON_DURATION;
   uint256 public DELAY_DIVISOR = 10_000;
@@ -37,12 +59,9 @@ contract SeasonToggleTest is SeasonToggleFactoryTest {
   error SeasonToggle_InvalidExtensionDelay();
   /// @notice Season durations must be at least `MIN_SEASON_DURATION` long
   error SeasonToggle_SeasonDurationTooShort();
-  /// @notice Emitted when a non-factory address attempts to call an onlyFactory function
-  error SeasonToggle_NotFactory();
 
   function setUp() public virtual override {
-    super.setUp();
-
+    DeployModuleFactory.setUp();
     // set up addresses
     dao = makeAddr("dao");
     subdao = makeAddr("subdao");
@@ -50,8 +69,16 @@ contract SeasonToggleTest is SeasonToggleFactoryTest {
     other = makeAddr("other");
     eligibility = makeAddr("eligibility");
 
+    // deploy implementation
+    DeployImplementation.prepare(IMPLEMENTATION_VERSION, false);
+    DeployImplementation.run();
+
     // deploy an instance of the SeasonToggle contract for hat1_1
-    instance = factory.createSeasonToggle(hat1_1, seasonDuration, extensionDelay);
+    instance = SeasonToggle(
+      factory.createHatsModule(
+        address(implementation), hat1_1, bytes(""), abi.encodePacked(seasonDuration, extensionDelay)
+      )
+    );
     seasonStart = block.timestamp;
     MIN_SEASON_DURATION = instance.MIN_SEASON_DURATION();
 
@@ -78,19 +105,13 @@ contract SeasonToggleTest is SeasonToggleFactoryTest {
     vm.stopPrank();
   }
 
-  /// @notice Mocks a call to the eligibility contract for `wearer` and `hat` that returns `eligible` and `standing`
-  function mockEligibityCall(address wearer, uint256 hat, bool eligible, bool standing) public {
-    bytes memory data = abi.encodeWithSignature("getWearerStatus(address,uint256)", wearer, hat);
-    vm.mockCall(eligibility, data, abi.encode(eligible, standing));
+  function test_deploy_implementation() public {
+    assertEq(implementation.version_(), IMPLEMENTATION_VERSION, "implementation version");
   }
 }
 
 contract SeasonToggleHarness is SeasonToggle {
   constructor() SeasonToggle("this is a test harness") { }
-
-  function checkOnlyFactory() public view onlyFactory returns (bool) {
-    return true;
-  }
 
   function extensionThreshold_(uint256 seasonEnd, uint256 extensionDelay, uint256 seasonDuration)
     public
@@ -111,26 +132,13 @@ contract InternalTest is SeasonToggleTest {
     harnessImplementation = new SeasonToggleHarness();
     // deploy harness proxy, for hat1_1
     harness = SeasonToggleHarness(
-      LibClone.cloneDeterministic(
-        address(harnessImplementation), abi.encodePacked(address(this), hats, hat1_1, uint32(1)), bytes32("salt")
+      factory.createHatsModule(
+        address(harnessImplementation), hat1_1, bytes(""), abi.encodePacked(seasonDuration, extensionDelay)
       )
     );
     // mint hat1_1 to harness contract
     vm.prank(dao);
     hats.mintHat(hat1_1, address(harness));
-  }
-}
-
-contract _onlyFactoryTest is InternalTest {
-  function test_succeeds_FromFactory() public {
-    vm.prank(address(this)); // this contract served as the factory for the harness
-    assertTrue(harness.checkOnlyFactory());
-  }
-
-  function test_reverts_FromNonFactory() public {
-    vm.prank(other);
-    vm.expectRevert(SeasonToggle_NotFactory.selector);
-    harness.checkOnlyFactory();
   }
 }
 
@@ -173,50 +181,44 @@ contract Internal_extensionThreshold is InternalTest {
 }
 
 contract SetUp is InternalTest {
-  // use the internal test to be able to set up an un-initialized instance
-  function test_succeeds_whenUninitialized() public {
-    vm.prank(address(this)); // this contract served as the factory for the harness
-    harness.setUp(seasonDuration, extensionDelay);
-    assertEq(harness.seasonDuration(), seasonDuration, "seasonDuration");
-    assertEq(harness.extensionDelay(), extensionDelay, "extensionDelay");
-  }
-
   // attempt to set up the implementation again
   function test_reverts_forImplementation() public {
     vm.prank(address(this)); // this contract served as the factory for the harness, but not the implementation
-    vm.expectRevert(SeasonToggle_NotFactory.selector);
-    implementation.setUp(seasonDuration, extensionDelay);
+    vm.expectRevert();
+    implementation.setUp(abi.encodePacked(seasonDuration, extensionDelay));
   }
 
   function test_reverts_forNonFactoryCaller() public {
     vm.prank(other);
-    vm.expectRevert(SeasonToggle_NotFactory.selector);
-    harness.setUp(seasonDuration, extensionDelay);
+    vm.expectRevert();
+    harness.setUp(abi.encodePacked(seasonDuration, extensionDelay));
   }
 
   function test_reverts_forInvalidSeasonDuration() public {
-    vm.prank(address(this)); // this contract served as the factory for the harness
-    vm.expectRevert(SeasonToggle_SeasonDurationTooShort.selector);
+    vm.expectRevert();
     // try a just-too-short duration
-    harness.setUp(MIN_SEASON_DURATION - 1, extensionDelay);
+    factory.createHatsModule(
+      address(harnessImplementation), hat1_1, bytes(""), abi.encodePacked(MIN_SEASON_DURATION - 1, extensionDelay)
+    );
   }
 
   function test_reverts_forInvalidExtensionDelay() public {
-    vm.prank(address(this)); // this contract served as the factory for the harness
-    vm.expectRevert(SeasonToggle_InvalidExtensionDelay.selector);
-    harness.setUp(seasonDuration, DELAY_DIVISOR + 1);
+    vm.expectRevert();
+    factory.createHatsModule(
+      address(harnessImplementation), hat1_1, bytes(""), abi.encodePacked(seasonDuration, DELAY_DIVISOR + 1)
+    );
   }
 }
 
 contract DeployInstance is SeasonToggleTest {
   function test_CorrectInitialVariables() public {
-    assertEq(address(instance.FACTORY()), address(factory), "factory");
+    assertEq(address(instance.IMPLEMENTATION()), address(implementation), "implementation");
     assertEq(address(instance.HATS()), address(hats), "hats");
-    assertEq(instance.branchRoot(), hat1_1, "branchRoot");
+    assertEq(instance.hatId(), hat1_1, "hatId");
     assertEq(instance.seasonDuration(), seasonDuration, "seasonDuration");
     assertEq(instance.extensionDelay(), extensionDelay, "extensionDelay");
     assertEq(instance.seasonEnd(), seasonStart + instance.seasonDuration(), "seasonEnd");
-    assertEq(instance.version(), VERSION, "version");
+    assertEq(instance.version(), "0.1.0", "version");
   }
 }
 

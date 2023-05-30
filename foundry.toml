@@ -10,7 +10,7 @@ remappings = [
   "ds-test/=lib/forge-std/lib/ds-test/src/",
   "forge-std/=lib/forge-std/src/",
   "hats-protocol/=lib/hats-protocol/src/",
-  "solady/=lib/solady/src/"
+  "hats-module/=lib/hats-module/src/"
 ]
 
 [profile.ci]
@@ -39,7 +39,7 @@ gnosis = "${GC_RPC}"
 goerli = "https://goerli.infura.io/v3/${INFURA_KEY}"
 local = "http://localhost:8545"
 mainnet = "https://mainnet.infura.io/v3/${INFURA_KEY}"
-# mainnet = "${MAINNET_RPC_URL}"
+#mainnet = "${MAINNET_RPC_URL}"
 optimism = "https://optimism-mainnet.infura.io/v3/${INFURA_KEY}"
 polygon = "${POLYGON_RPC}"
 sepolia = "https://sepolia.infura.io/v3/${INFURA_KEY}"
