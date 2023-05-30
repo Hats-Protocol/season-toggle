@@ -32,12 +32,6 @@ contract SeasonToggle is HatsToggleModule {
                           PUBLIC  CONSTANTS
   //////////////////////////////////////////////////////////////*/
 
-  /// @notice The minimum length of a season, in seconds
-  uint256 public constant MIN_SEASON_DURATION = 1 hours; // 1 hour = 3,600 seconds
-
-  /*//////////////////////////////////////////////////////////////
-                          INTERNAL  CONSTANTS
-  //////////////////////////////////////////////////////////////*/
   /**
    * This contract is a clone with immutable args, which means that it is deployed with a set of
    * immutable storage variables (ie constants). Accessing these constants is cheaper than accessing
@@ -58,6 +52,13 @@ contract SeasonToggle is HatsToggleModule {
    * 40      | hatId           | uint256 | 32      | HatsModule          |
    * --------------------------------------------------------------------+
    */
+
+  /// @notice The minimum length of a season, in seconds
+  uint256 public constant MIN_SEASON_DURATION = 1 hours; // 1 hour = 3,600 seconds
+
+  /*//////////////////////////////////////////////////////////////
+                          INTERNAL  CONSTANTS
+  //////////////////////////////////////////////////////////////*/
 
   /**
    * @notice The divisor used to calculate the extension delay proportion given an `extensionDelay` numerator
