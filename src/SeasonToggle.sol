@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.18;
+pragma solidity ^0.8.19;
 
 // import { console2 } from "forge-std/Test.sol"; // remove before deploy
 import { IHatsToggle } from "hats-protocol/Interfaces/IHatsToggle.sol";
@@ -99,7 +99,7 @@ contract SeasonToggle is HatsToggleModule {
    * for another season. The value is treated as the numerator `x` in the expression `x / 10,000`, and therefore must be
    * <= 10,000.
    */
-  function setUp(bytes calldata _initData) public override initializer {
+  function _setUp(bytes calldata _initData) internal override {
     (uint256 _seasonDuration, uint256 _extensionDelay) = abi.decode(_initData, (uint256, uint256));
     // prevent invalid extension delays
     if (_extensionDelay > DELAY_DIVISOR) revert SeasonToggle_InvalidExtensionDelay();

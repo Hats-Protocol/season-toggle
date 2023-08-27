@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.13;
+pragma solidity ^0.8.19;
 
 import { Test, console2 } from "forge-std/Test.sol";
-import { SeasonToggle } from "src/SeasonToggle.sol";
+import { SeasonToggle } from "../src/SeasonToggle.sol";
 import { IHats } from "hats-protocol/Interfaces/IHats.sol";
-import { DeployImplementation } from "script/SeasonToggle.s.sol";
+import { DeployImplementation } from "../script/SeasonToggle.s.sol";
 import { HatsModuleFactory } from "hats-module/HatsModuleFactory.sol";
 
 contract DeployModuleFactory is Test {

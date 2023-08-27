@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.18;
+pragma solidity ^0.8.19;
 
 import { Script, console2 } from "forge-std/Script.sol";
-import { SeasonToggle } from "src/SeasonToggle.sol";
+import { SeasonToggle } from "../src/SeasonToggle.sol";
 
 contract DeployImplementation is Script {
   SeasonToggle public implementation;
